@@ -9,17 +9,12 @@
 #include <linux/udp.h>
 #include "jasusi.h"
 
-#define AUTHOR "Wambui Karuga <wambui@brck.com"
-#define DESCRIPTION "Network Traffic Logger"
-#define LICENSE "GPL v2"
-
 static struct nf_hook_ops jasusi_ops;
-/* Interfaces */
-static const unsigned char *localhost = "lo";
-static const char *ethernet = "eth0";
+/* Interface to listen to */
+static const char *wifi = "wlan0";
 struct sk_buff *socket_buffer;                              
 struct udphdr *udp_header;
-struct iphdr *header;                                               
+struct iphdr *ip_header;                                            
 
 static unsigned int return_source_ip(struct iphdr *pkt) {
     return (unsigned int) pkt->saddr;
@@ -27,44 +22,75 @@ static unsigned int return_source_ip(struct iphdr *pkt) {
 static unsigned int return_destination_ip(struct iphdr *pkt) {
     return (unsigned int) pkt->daddr;
 }
-static unsigned int return_protocol(struct iphdr *pkt) {
-    return (unsigned int ) pkt->protocol;
+static int return_protocol(struct iphdr *pkt) {
+    return pkt->protocol;
 }
-unsigned int jasusi_main_hook(unsigned int hooknum, struct sk_buff *skb,
+
+static char *return_interface(struct sk_buff *buffer) {
+    return buffer->dev->name;
+}
+static unsigned char *return_device_mac(struct sk_buff *buffer) {
+    struct ethhdr *header;
+    header = eth_hdr(buffer);
+    return header->h_source;
+}
+
+static unsigned int jasusi_all_incoming_hook(unsigned int hooknum, struct sk_buff *skb,
                             const struct net_device *in, const struct net_device *out,
                                int (*okfn)(struct sk_buff *)) {
+    struct device_packets *packet;
+    struct iphdr *ip_header; 
+
     socket_buffer = skb;
-    header = (struct iphdr *) skb_network_header(socket_buffer);
-    struct device_packets *test;
-    test = kmalloc(sizeof(*test), GFP_KERNEL);
-    test->src_addr = return_source_ip(header);
-    test->dest_addr = return_destination_ip(header);
-    test->protocol = return_protocol(header);
-    if (test->protocol == 17) {
-        test->udp_header = (struct udphdr *) skb_transport_header(socket_buffer);
-        
+    packet = kmalloc(sizeof(*packet), GFP_KERNEL);
+    packet->interface = return_interface(socket_buffer);
+    /* Packets are not coming through the Wi-Fi chip
+    *  so we don't care about them.
+    */
+    if (strcmp(packet->interface, wifi) != 0)
+        return NF_ACCEPT;
+    
+    ip_header = (struct iphdr *) skb_network_header(socket_buffer);
+    
+    packet->protocol = return_protocol(ip_header);
+
+    packet->src_addr = return_source_ip(ip_header);
+    packet->dest_addr = return_destination_ip(ip_header);
+
+
+   /*  printk(KERN_INFO "Received packet with protocol %d on interface %s", packet->protocol, packet->interface); */
+
+    if (packet->protocol != 6 && packet->protocol != 17) {
+        return NF_ACCEPT;
     }
-    /* if (strcmp(in->name, localhost) == 0 || strcmp(in->name, ethernet) == 0){
-        printk(KERN_INFO "Packets received through interface %s. Dropping...", in->name);
-        return NF_DROP;
-    } */
-    printk(KERN_INFO "Received packet from %d using protocol %d", test->src_addr, header->protocol);
+    packet->mac_addr = return_device_mac(socket_buffer);
+    /* trace_printk("Received packet from device %pM using protocol %d\n", packet->mac_addr, packet->protocol); */
+    printk(KERN_INFO "Received packet from device %pM using protocol %d\n", packet->mac_addr, packet->protocol);
     return NF_ACCEPT;
 }
 
-static int jasusi_init(void) {
-    jasusi_ops.hook = jasusi_main_hook;
-    jasusi_ops.pf = PF_INET;
-    jasusi_ops.hooknum = NF_INET_PRE_ROUTING;
-    jasusi_ops.priority = NF_IP_PRI_FIRST;
+static struct nf_hook_ops jasusi_hooks[] __read_mostly = {
+    {
+        .hook       = jasusi_all_incoming_hook,
+        .pf         = NFPROTO_IPV4,
+        .hooknum    = NF_INET_PRE_ROUTING,
+        .priority   = NF_IP_PRI_FIRST,
+    },
 
-    nf_register_hook(&jasusi_ops);
+};
+
+static int jasusi_init(void) {
+    int result;
+    result = nf_register_hooks(jasusi_hooks, ARRAY_SIZE(jasusi_hooks));
+    if (result > 0) {
+        ;
+    }
     return 0;
 }
 
 static void jasusi_cleanup(void){
-    printk(KERN_INFO "Unloading jasusi!");
-    nf_unregister_hook(&jasusi_ops);
+    printk(KERN_INFO "Unloading jasusi!\n");
+    nf_unregister_hooks(jasusi_hooks, ARRAY_SIZE(jasusi_hooks));
     return;
 }
 
