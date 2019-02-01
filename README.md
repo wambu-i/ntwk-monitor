@@ -6,10 +6,10 @@ A network traffic accounting tool.
 - [x] Get MAC addresses from devices.
 
 
-- [] Filter according to remote or local targets.
+- [ ] Filter according to remote or local targets.
 
 
-- [] Get IP addresses of remote targets.
+- [ ] Get IP addresses of remote targets.
 
 
-- [] Track seen packets.
+- [ ] Track seen packets.
