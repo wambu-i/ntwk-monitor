@@ -19,7 +19,8 @@ ifneq ($(KERNELRELEASE),)
 	ccflags-y	+=	$(DEBFLAGS)
 
 	CONFIG_JASUSI_DEBUG	:= -DDEBUG
-	jasusi-objs := jasusi-device.o
+	jasusi-objs := device.o
+	CFLAGS_device.o	:= -DDEBUG
 
 else
 	# external module build

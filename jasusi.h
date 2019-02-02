@@ -13,8 +13,8 @@
 
 
 struct device_packets {
-    unsigned int src_addr;
-    unsigned int dest_addr;
+    u32 src_addr;
+    u32 dest_addr;
     unsigned char *mac_addr;
     char *interface;
     int protocol;
